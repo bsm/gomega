@@ -107,7 +107,7 @@ func (g GHTTPWithGomega) VerifyHeader(header http.Header) http.HandlerFunc {
 //(recall that a `http.Header` is a mapping from string (key) to []string (values))
 //It is a convenience wrapper around `VerifyHeader` that allows you to avoid having to create an `http.Header` object.
 func (g GHTTPWithGomega) VerifyHeaderKV(key string, values ...string) http.HandlerFunc {
-	return VerifyHeader(http.Header{key: values})
+	return g.VerifyHeader(http.Header{key: values})
 }
 
 //VerifyBody returns a handler that verifies that the body of the request matches the passed in byte array.
@@ -129,7 +129,7 @@ func (g GHTTPWithGomega) VerifyBody(expectedBody []byte) http.HandlerFunc {
 //VerifyJSON also verifies that the request's content type is application/json
 func (g GHTTPWithGomega) VerifyJSON(expectedJSON string) http.HandlerFunc {
 	return CombineHandlers(
-		VerifyMimeType("application/json"),
+		g.VerifyMimeType("application/json"),
 		func(w http.ResponseWriter, req *http.Request) {
 			body, err := ioutil.ReadAll(req.Body)
 			req.Body.Close()
@@ -146,8 +146,8 @@ func (g GHTTPWithGomega) VerifyJSONRepresenting(object interface{}) http.Handler
 	data, err := json.Marshal(object)
 	g.gomega.Expect(err).ShouldNot(HaveOccurred())
 	return CombineHandlers(
-		VerifyMimeType("application/json"),
-		VerifyJSON(string(data)),
+		g.VerifyMimeType("application/json"),
+		g.VerifyJSON(string(data)),
 	)
 }
 
@@ -169,7 +169,7 @@ func (g GHTTPWithGomega) VerifyForm(values url.Values) http.HandlerFunc {
 //
 //It is a convenience wrapper around `VerifyForm` that lets you avoid having to create a `url.Values` object.
 func (g GHTTPWithGomega) VerifyFormKV(key string, values ...string) http.HandlerFunc {
-	return VerifyForm(url.Values{key: values})
+	return g.VerifyForm(url.Values{key: values})
 }
 
 func copyHeader(src http.Header, dst http.Header) {

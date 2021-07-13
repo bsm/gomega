@@ -1,6 +1,8 @@
---- ./ghttp/handlers.go	2021-04-06 11:16:35.408198636 +0100
-+++ ./ghttp/handlers.go	2021-04-06 11:12:15.628252311 +0100
-@@ -9,10 +9,8 @@
+diff --git a/ghttp/handlers.go b/ghttp/handlers.go
+index 933cbc3..de5784e 100644
+--- a/ghttp/handlers.go
++++ b/ghttp/handlers.go
+@@ -9,10 +9,8 @@ import (
  	"io/ioutil"
  	"net/http"
  	"net/url"
@@ -11,8 +13,8 @@
  	"github.com/bsm/gomega"
  	. "github.com/bsm/gomega"
  	"github.com/bsm/gomega/types"
-@@ -174,32 +172,6 @@
- 	return VerifyForm(url.Values{key: values})
+@@ -174,32 +172,6 @@ func (g GHTTPWithGomega) VerifyFormKV(key string, values ...string) http.Handler
+ 	return g.VerifyForm(url.Values{key: values})
  }
 
 -//VerifyProtoRepresenting returns a handler that verifies that the body of the request is a valid protobuf
@@ -21,7 +23,7 @@
 -//VerifyProtoRepresenting also verifies that the request's content type is application/x-protobuf
 -func (g GHTTPWithGomega) VerifyProtoRepresenting(expected proto.Message) http.HandlerFunc {
 -	return CombineHandlers(
--		VerifyContentType("application/x-protobuf"),
+-		g.VerifyContentType("application/x-protobuf"),
 -		func(w http.ResponseWriter, req *http.Request) {
 -			body, err := ioutil.ReadAll(req.Body)
 -			g.gomega.Expect(err).ShouldNot(HaveOccurred())
@@ -44,7 +46,7 @@
  func copyHeader(src http.Header, dst http.Header) {
  	for key, value := range src {
  		dst[key] = value
-@@ -309,31 +281,6 @@
+@@ -309,31 +281,6 @@ func (g GHTTPWithGomega) RespondWithJSONEncodedPtr(statusCode *int, object inter
  	}
  }
 
@@ -76,7 +78,7 @@
  func VerifyRequest(method string, path interface{}, rawQuery ...string) http.HandlerFunc {
  	return NewGHTTPWithGomega(gomega.Default).VerifyRequest(method, path, rawQuery...)
  }
-@@ -378,10 +325,6 @@
+@@ -378,10 +325,6 @@ func VerifyFormKV(key string, values ...string) http.HandlerFunc {
  	return NewGHTTPWithGomega(gomega.Default).VerifyFormKV(key, values...)
  }
 
@@ -87,7 +89,7 @@
  func RespondWith(statusCode int, body interface{}, optionalHeader ...http.Header) http.HandlerFunc {
  	return NewGHTTPWithGomega(gomega.Default).RespondWith(statusCode, body, optionalHeader...)
  }
-@@ -397,7 +340,3 @@
+@@ -397,7 +340,3 @@ func RespondWithJSONEncoded(statusCode int, object interface{}, optionalHeader .
  func RespondWithJSONEncodedPtr(statusCode *int, object interface{}, optionalHeader ...http.Header) http.HandlerFunc {
  	return NewGHTTPWithGomega(gomega.Default).RespondWithJSONEncodedPtr(statusCode, object, optionalHeader...)
  }
@@ -95,30 +97,11 @@
 -func RespondWithProto(statusCode int, message proto.Message, optionalHeader ...http.Header) http.HandlerFunc {
 -	return NewGHTTPWithGomega(gomega.Default).RespondWithProto(statusCode, message, optionalHeader...)
 -}
---- ./matchers/match_xml_matcher.go	2021-04-06 11:16:35.424198632 +0100
-+++ ./matchers/match_xml_matcher.go	2021-04-06 10:59:11.104296549 +0100
-@@ -11,7 +11,6 @@
- 	"strings"
-
- 	"github.com/bsm/gomega/format"
--	"golang.org/x/net/html/charset"
- )
-
- type MatchXMLMatcher struct {
-@@ -110,9 +109,7 @@
- }
-
- func newXmlDecoder(reader io.Reader) *xml.Decoder {
--	dec := xml.NewDecoder(reader)
--	dec.CharsetReader = charset.NewReaderLabel
--	return dec
-+	return xml.NewDecoder(reader)
- }
-
- func trimParentNodesContentSpaces(node *xmlNode) {
---- ./matchers.go	2021-04-06 11:16:35.416198634 +0100
-+++ ./matchers.go	2021-04-06 11:00:24.848305975 +0100
-@@ -223,15 +223,6 @@
+diff --git a/matchers.go b/matchers.go
+index 3cdeac9..8d12711 100644
+--- a/matchers.go
++++ b/matchers.go
+@@ -223,15 +223,6 @@ func MatchXML(xml interface{}) types.GomegaMatcher {
  	}
  }
 
@@ -134,4 +117,24 @@
  //BeEmpty succeeds if actual is empty.  Actual must be of type string, array, map, chan, or slice.
  func BeEmpty() types.GomegaMatcher {
  	return &matchers.BeEmptyMatcher{}
-Only in .: remove.patch
+diff --git a/matchers/match_xml_matcher.go b/matchers/match_xml_matcher.go
+index 75479da..2ddc47c 100644
+--- a/matchers/match_xml_matcher.go
++++ b/matchers/match_xml_matcher.go
+@@ -11,7 +11,6 @@ import (
+ 	"strings"
+
+ 	"github.com/bsm/gomega/format"
+-	"golang.org/x/net/html/charset"
+ )
+
+ type MatchXMLMatcher struct {
+@@ -111,7 +110,6 @@ func parseXmlContent(content string) (*xmlNode, error) {
+
+ func newXmlDecoder(reader io.Reader) *xml.Decoder {
+ 	dec := xml.NewDecoder(reader)
+-	dec.CharsetReader = charset.NewReaderLabel
+ 	return dec
+ }
+ 
+

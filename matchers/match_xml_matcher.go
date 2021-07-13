@@ -109,7 +109,8 @@ func parseXmlContent(content string) (*xmlNode, error) {
 }
 
 func newXmlDecoder(reader io.Reader) *xml.Decoder {
-	return xml.NewDecoder(reader)
+	dec := xml.NewDecoder(reader)
+	return dec
 }
 
 func trimParentNodesContentSpaces(node *xmlNode) {
