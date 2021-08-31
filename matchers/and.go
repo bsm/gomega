@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/bsm/gomega/format"
-	"github.com/bsm/gomega/internal/oraclematcher"
 	"github.com/bsm/gomega/types"
 )
 
@@ -52,12 +51,12 @@ func (m *AndMatcher) MatchMayChangeInTheFuture(actual interface{}) bool {
 	if m.firstFailedMatcher == nil {
 		// so all matchers succeeded.. Any one of them changing would change the result.
 		for _, matcher := range m.Matchers {
-			if oraclematcher.MatchMayChangeInTheFuture(matcher, actual) {
+			if types.MatchMayChangeInTheFuture(matcher, actual) {
 				return true
 			}
 		}
 		return false // none of were going to change
 	}
 	// one of the matchers failed.. it must be able to change in order to affect the result
-	return oraclematcher.MatchMayChangeInTheFuture(m.firstFailedMatcher, actual)
+	return types.MatchMayChangeInTheFuture(m.firstFailedMatcher, actual)
 }
