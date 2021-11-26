@@ -1,9 +1,9 @@
 diff --git a/ghttp/handlers.go b/ghttp/handlers.go
-index 933cbc3..de5784e 100644
+index 8bb3802..0f252f3 100644
 --- a/ghttp/handlers.go
 +++ b/ghttp/handlers.go
 @@ -9,10 +9,8 @@ import (
- 	"io/ioutil"
+ 	"io"
  	"net/http"
  	"net/url"
 -	"reflect"
@@ -25,7 +25,7 @@ index 933cbc3..de5784e 100644
 -	return CombineHandlers(
 -		g.VerifyContentType("application/x-protobuf"),
 -		func(w http.ResponseWriter, req *http.Request) {
--			body, err := ioutil.ReadAll(req.Body)
+-			body, err := io.ReadAll(req.Body)
 -			g.gomega.Expect(err).ShouldNot(HaveOccurred())
 -			req.Body.Close()
 -
@@ -98,7 +98,7 @@ index 933cbc3..de5784e 100644
 -	return NewGHTTPWithGomega(gomega.Default).RespondWithProto(statusCode, message, optionalHeader...)
 -}
 diff --git a/matchers.go b/matchers.go
-index 3cdeac9..8d12711 100644
+index 5c0ffe4..407e2d8 100644
 --- a/matchers.go
 +++ b/matchers.go
 @@ -223,15 +223,6 @@ func MatchXML(xml interface{}) types.GomegaMatcher {
@@ -136,5 +136,3 @@ index 75479da..2ddc47c 100644
 -	dec.CharsetReader = charset.NewReaderLabel
  	return dec
  }
- 
-
