@@ -1,138 +1,143 @@
-diff --git a/ghttp/handlers.go b/ghttp/handlers.go
-index 8bb3802..0f252f3 100644
---- a/ghttp/handlers.go
-+++ b/ghttp/handlers.go
-@@ -9,10 +9,8 @@ import (
- 	"io"
- 	"net/http"
- 	"net/url"
--	"reflect"
- 	"strings"
-
--	"github.com/golang/protobuf/proto"
- 	"github.com/bsm/gomega"
- 	. "github.com/bsm/gomega"
- 	"github.com/bsm/gomega/types"
-@@ -174,32 +172,6 @@ func (g GHTTPWithGomega) VerifyFormKV(key string, values ...string) http.Handler
- 	return g.VerifyForm(url.Values{key: values})
- }
-
--//VerifyProtoRepresenting returns a handler that verifies that the body of the request is a valid protobuf
--//representation of the passed message.
--//
--//VerifyProtoRepresenting also verifies that the request's content type is application/x-protobuf
--func (g GHTTPWithGomega) VerifyProtoRepresenting(expected proto.Message) http.HandlerFunc {
--	return CombineHandlers(
--		g.VerifyContentType("application/x-protobuf"),
--		func(w http.ResponseWriter, req *http.Request) {
--			body, err := io.ReadAll(req.Body)
--			g.gomega.Expect(err).ShouldNot(HaveOccurred())
--			req.Body.Close()
+diff --git a/update.patch b/update.patch
+index a6434d4..e69de29 100644
+--- a/update.patch
++++ b/update.patch
+@@ -1,138 +0,0 @@
+-diff --git a/ghttp/handlers.go b/ghttp/handlers.go
+-index 8bb3802..0f252f3 100644
+---- a/ghttp/handlers.go
+-+++ b/ghttp/handlers.go
+-@@ -9,10 +9,8 @@ import (
+- 	"io"
+- 	"net/http"
+- 	"net/url"
+--	"reflect"
+- 	"strings"
 -
--			expectedType := reflect.TypeOf(expected)
--			actualValuePtr := reflect.New(expectedType.Elem())
+--	"github.com/golang/protobuf/proto"
+- 	"github.com/bsm/gomega"
+- 	. "github.com/bsm/gomega"
+- 	"github.com/bsm/gomega/types"
+-@@ -174,32 +172,6 @@ func (g GHTTPWithGomega) VerifyFormKV(key string, values ...string) http.Handler
+- 	return g.VerifyForm(url.Values{key: values})
+- }
 -
--			actual, ok := actualValuePtr.Interface().(proto.Message)
--			g.gomega.Expect(ok).Should(BeTrue(), "Message value is not a proto.Message")
+--//VerifyProtoRepresenting returns a handler that verifies that the body of the request is a valid protobuf
+--//representation of the passed message.
+--//
+--//VerifyProtoRepresenting also verifies that the request's content type is application/x-protobuf
+--func (g GHTTPWithGomega) VerifyProtoRepresenting(expected proto.Message) http.HandlerFunc {
+--	return CombineHandlers(
+--		g.VerifyContentType("application/x-protobuf"),
+--		func(w http.ResponseWriter, req *http.Request) {
+--			body, err := io.ReadAll(req.Body)
+--			g.gomega.Expect(err).ShouldNot(HaveOccurred())
+--			req.Body.Close()
+--
+--			expectedType := reflect.TypeOf(expected)
+--			actualValuePtr := reflect.New(expectedType.Elem())
+--
+--			actual, ok := actualValuePtr.Interface().(proto.Message)
+--			g.gomega.Expect(ok).Should(BeTrue(), "Message value is not a proto.Message")
+--
+--			err = proto.Unmarshal(body, actual)
+--			g.gomega.Expect(err).ShouldNot(HaveOccurred(), "Failed to unmarshal protobuf")
+--
+--			g.gomega.Expect(actual).Should(Equal(expected), "ProtoBuf Mismatch")
+--		},
+--	)
+--}
+--
+- func copyHeader(src http.Header, dst http.Header) {
+- 	for key, value := range src {
+- 		dst[key] = value
+-@@ -309,31 +281,6 @@ func (g GHTTPWithGomega) RespondWithJSONEncodedPtr(statusCode *int, object inter
+- 	}
+- }
 -
--			err = proto.Unmarshal(body, actual)
--			g.gomega.Expect(err).ShouldNot(HaveOccurred(), "Failed to unmarshal protobuf")
+--//RespondWithProto returns a handler that responds to a request with the specified status code and a body
+--//containing the protobuf serialization of the provided message.
+--//
+--//Also, RespondWithProto can be given an optional http.Header.  The headers defined therein will be added to the response headers.
+--func (g GHTTPWithGomega) RespondWithProto(statusCode int, message proto.Message, optionalHeader ...http.Header) http.HandlerFunc {
+--	return func(w http.ResponseWriter, req *http.Request) {
+--		data, err := proto.Marshal(message)
+--		g.gomega.Expect(err).ShouldNot(HaveOccurred())
+--
+--		var headers http.Header
+--		if len(optionalHeader) == 1 {
+--			headers = optionalHeader[0]
+--		} else {
+--			headers = make(http.Header)
+--		}
+--		if _, found := headers["Content-Type"]; !found {
+--			headers["Content-Type"] = []string{"application/x-protobuf"}
+--		}
+--		copyHeader(headers, w.Header())
+--
+--		w.WriteHeader(statusCode)
+--		w.Write(data)
+--	}
+--}
+--
+- func VerifyRequest(method string, path interface{}, rawQuery ...string) http.HandlerFunc {
+- 	return NewGHTTPWithGomega(gomega.Default).VerifyRequest(method, path, rawQuery...)
+- }
+-@@ -378,10 +325,6 @@ func VerifyFormKV(key string, values ...string) http.HandlerFunc {
+- 	return NewGHTTPWithGomega(gomega.Default).VerifyFormKV(key, values...)
+- }
 -
--			g.gomega.Expect(actual).Should(Equal(expected), "ProtoBuf Mismatch")
--		},
--	)
--}
+--func VerifyProtoRepresenting(expected proto.Message) http.HandlerFunc {
+--	return NewGHTTPWithGomega(gomega.Default).VerifyProtoRepresenting(expected)
+--}
+--
+- func RespondWith(statusCode int, body interface{}, optionalHeader ...http.Header) http.HandlerFunc {
+- 	return NewGHTTPWithGomega(gomega.Default).RespondWith(statusCode, body, optionalHeader...)
+- }
+-@@ -397,7 +340,3 @@ func RespondWithJSONEncoded(statusCode int, object interface{}, optionalHeader .
+- func RespondWithJSONEncodedPtr(statusCode *int, object interface{}, optionalHeader ...http.Header) http.HandlerFunc {
+- 	return NewGHTTPWithGomega(gomega.Default).RespondWithJSONEncodedPtr(statusCode, object, optionalHeader...)
+- }
+--
+--func RespondWithProto(statusCode int, message proto.Message, optionalHeader ...http.Header) http.HandlerFunc {
+--	return NewGHTTPWithGomega(gomega.Default).RespondWithProto(statusCode, message, optionalHeader...)
+--}
+-diff --git a/matchers.go b/matchers.go
+-index 5c0ffe4..407e2d8 100644
+---- a/matchers.go
+-+++ b/matchers.go
+-@@ -223,15 +223,6 @@ func MatchXML(xml interface{}) types.GomegaMatcher {
+- 	}
+- }
 -
- func copyHeader(src http.Header, dst http.Header) {
- 	for key, value := range src {
- 		dst[key] = value
-@@ -309,31 +281,6 @@ func (g GHTTPWithGomega) RespondWithJSONEncodedPtr(statusCode *int, object inter
- 	}
- }
-
--//RespondWithProto returns a handler that responds to a request with the specified status code and a body
--//containing the protobuf serialization of the provided message.
--//
--//Also, RespondWithProto can be given an optional http.Header.  The headers defined therein will be added to the response headers.
--func (g GHTTPWithGomega) RespondWithProto(statusCode int, message proto.Message, optionalHeader ...http.Header) http.HandlerFunc {
--	return func(w http.ResponseWriter, req *http.Request) {
--		data, err := proto.Marshal(message)
--		g.gomega.Expect(err).ShouldNot(HaveOccurred())
+--//MatchYAML succeeds if actual is a string or stringer of YAML that matches
+--//the expected YAML.  The YAML's are decoded and the resulting objects are compared via
+--//reflect.DeepEqual so things like key-ordering and whitespace shouldn't matter.
+--func MatchYAML(yaml interface{}) types.GomegaMatcher {
+--	return &matchers.MatchYAMLMatcher{
+--		YAMLToMatch: yaml,
+--	}
+--}
+--
+- //BeEmpty succeeds if actual is empty.  Actual must be of type string, array, map, chan, or slice.
+- func BeEmpty() types.GomegaMatcher {
+- 	return &matchers.BeEmptyMatcher{}
+-diff --git a/matchers/match_xml_matcher.go b/matchers/match_xml_matcher.go
+-index 75479da..2ddc47c 100644
+---- a/matchers/match_xml_matcher.go
+-+++ b/matchers/match_xml_matcher.go
+-@@ -11,7 +11,6 @@ import (
+- 	"strings"
 -
--		var headers http.Header
--		if len(optionalHeader) == 1 {
--			headers = optionalHeader[0]
--		} else {
--			headers = make(http.Header)
--		}
--		if _, found := headers["Content-Type"]; !found {
--			headers["Content-Type"] = []string{"application/x-protobuf"}
--		}
--		copyHeader(headers, w.Header())
+- 	"github.com/bsm/gomega/format"
+--	"golang.org/x/net/html/charset"
+- )
 -
--		w.WriteHeader(statusCode)
--		w.Write(data)
--	}
--}
+- type MatchXMLMatcher struct {
+-@@ -111,7 +110,6 @@ func parseXmlContent(content string) (*xmlNode, error) {
 -
- func VerifyRequest(method string, path interface{}, rawQuery ...string) http.HandlerFunc {
- 	return NewGHTTPWithGomega(gomega.Default).VerifyRequest(method, path, rawQuery...)
- }
-@@ -378,10 +325,6 @@ func VerifyFormKV(key string, values ...string) http.HandlerFunc {
- 	return NewGHTTPWithGomega(gomega.Default).VerifyFormKV(key, values...)
- }
-
--func VerifyProtoRepresenting(expected proto.Message) http.HandlerFunc {
--	return NewGHTTPWithGomega(gomega.Default).VerifyProtoRepresenting(expected)
--}
--
- func RespondWith(statusCode int, body interface{}, optionalHeader ...http.Header) http.HandlerFunc {
- 	return NewGHTTPWithGomega(gomega.Default).RespondWith(statusCode, body, optionalHeader...)
- }
-@@ -397,7 +340,3 @@ func RespondWithJSONEncoded(statusCode int, object interface{}, optionalHeader .
- func RespondWithJSONEncodedPtr(statusCode *int, object interface{}, optionalHeader ...http.Header) http.HandlerFunc {
- 	return NewGHTTPWithGomega(gomega.Default).RespondWithJSONEncodedPtr(statusCode, object, optionalHeader...)
- }
--
--func RespondWithProto(statusCode int, message proto.Message, optionalHeader ...http.Header) http.HandlerFunc {
--	return NewGHTTPWithGomega(gomega.Default).RespondWithProto(statusCode, message, optionalHeader...)
--}
-diff --git a/matchers.go b/matchers.go
-index 5c0ffe4..407e2d8 100644
---- a/matchers.go
-+++ b/matchers.go
-@@ -223,15 +223,6 @@ func MatchXML(xml interface{}) types.GomegaMatcher {
- 	}
- }
-
--//MatchYAML succeeds if actual is a string or stringer of YAML that matches
--//the expected YAML.  The YAML's are decoded and the resulting objects are compared via
--//reflect.DeepEqual so things like key-ordering and whitespace shouldn't matter.
--func MatchYAML(yaml interface{}) types.GomegaMatcher {
--	return &matchers.MatchYAMLMatcher{
--		YAMLToMatch: yaml,
--	}
--}
--
- //BeEmpty succeeds if actual is empty.  Actual must be of type string, array, map, chan, or slice.
- func BeEmpty() types.GomegaMatcher {
- 	return &matchers.BeEmptyMatcher{}
-diff --git a/matchers/match_xml_matcher.go b/matchers/match_xml_matcher.go
-index 75479da..2ddc47c 100644
---- a/matchers/match_xml_matcher.go
-+++ b/matchers/match_xml_matcher.go
-@@ -11,7 +11,6 @@ import (
- 	"strings"
-
- 	"github.com/bsm/gomega/format"
--	"golang.org/x/net/html/charset"
- )
-
- type MatchXMLMatcher struct {
-@@ -111,7 +110,6 @@ func parseXmlContent(content string) (*xmlNode, error) {
-
- func newXmlDecoder(reader io.Reader) *xml.Decoder {
- 	dec := xml.NewDecoder(reader)
--	dec.CharsetReader = charset.NewReaderLabel
- 	return dec
- }
+- func newXmlDecoder(reader io.Reader) *xml.Decoder {
+- 	dec := xml.NewDecoder(reader)
+--	dec.CharsetReader = charset.NewReaderLabel
+- 	return dec
+- }

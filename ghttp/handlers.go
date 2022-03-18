@@ -6,13 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/bsm/gomega"
 	. "github.com/bsm/gomega"
+	"github.com/bsm/gomega/internal/gutil"
 	"github.com/bsm/gomega/types"
 )
 
@@ -115,7 +115,7 @@ func (g GHTTPWithGomega) VerifyHeaderKV(key string, values ...string) http.Handl
 func (g GHTTPWithGomega) VerifyBody(expectedBody []byte) http.HandlerFunc {
 	return CombineHandlers(
 		func(w http.ResponseWriter, req *http.Request) {
-			body, err := io.ReadAll(req.Body)
+			body, err := gutil.ReadAll(req.Body)
 			req.Body.Close()
 			g.gomega.Expect(err).ShouldNot(HaveOccurred())
 			g.gomega.Expect(body).Should(Equal(expectedBody), "Body Mismatch")
@@ -131,7 +131,7 @@ func (g GHTTPWithGomega) VerifyJSON(expectedJSON string) http.HandlerFunc {
 	return CombineHandlers(
 		g.VerifyMimeType("application/json"),
 		func(w http.ResponseWriter, req *http.Request) {
-			body, err := io.ReadAll(req.Body)
+			body, err := gutil.ReadAll(req.Body)
 			req.Body.Close()
 			g.gomega.Expect(err).ShouldNot(HaveOccurred())
 			g.gomega.Expect(body).Should(MatchJSON(expectedJSON), "JSON Mismatch")
