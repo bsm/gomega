@@ -416,7 +416,7 @@ SetDefaultConsistentlyDuration(t time.Duration)
 SetDefaultConsistentlyPollingInterval(t time.Duration)
 ```
 
-You can also adjust these global timeouts by setting the `GOMEGA_DEFAULT_EVENTUALLY_TIMEOUT`, `GOMEGA_DEFAULT_EVENTUALLY_POLLING_INTERVAL`, `GOMEGA_DEFAULT_CONSISTENTLY_DURATION`, and `GOMEGA_DEFAULT_CONSISTENTLY_POLLING_INTERVAL` environment variables to a parseable duration string.
+You can also adjust these global timeouts by setting the `GOMEGA_DEFAULT_EVENTUALLY_TIMEOUT`, `GOMEGA_DEFAULT_EVENTUALLY_POLLING_INTERVAL`, `GOMEGA_DEFAULT_CONSISTENTLY_DURATION`, and `GOMEGA_DEFAULT_CONSISTENTLY_POLLING_INTERVAL` environment variables to a parseable duration string. The environment variables have a lower precedence than `SetDefault...()`.
 
 ## Making Assertions in Helper Functions
 
@@ -886,12 +886,42 @@ succeeds if the capacity of `ACTUAL` is `INT`. `ACTUAL` must be of type `array`,
 Ω(ACTUAL).Should(ContainElement(ELEMENT))
 ```
 
+or
+
+```go
+Ω(ACTUAL).Should(ContainElement(ELEMENT, <POINTER>))
+```
+
+
 succeeds if `ACTUAL` contains an element that equals `ELEMENT`.  `ACTUAL` must be an `array`, `slice`, or `map` -- anything else is an error.  For `map`s `ContainElement` searches through the map's values (not keys!).
 
 By default `ContainElement()` uses the `Equal()` matcher under the hood to assert equality between `ACTUAL`'s elements and `ELEMENT`.  You can change this, however, by passing `ContainElement` a `GomegaMatcher`. For example, to check that a slice of strings has an element that matches a substring:
 
 ```go
 Ω([]string{"Foo", "FooBar"}).Should(ContainElement(ContainSubstring("Bar")))
+```
+
+In addition, there are occasions when you need to grab (all) matching contained elements, for instance, to make several assertions against the matching contained elements. To do this, you can ask the `ContainElement()` matcher for the matching contained elements by passing it a pointer to a variable of the appropriate type. If multiple matching contained elements are expected, then a pointer to either a slice or a map should be passed (but not a pointer to an array), otherwise a pointer to a scalar (non-slice, non-map):
+
+```go
+var findings []string
+Ω([]string{"foo", "foobar", "bar"}).Should(ContainElement(ContainSubstring("foo"), &findings))
+
+var finding string
+Ω([]string{"foo", "foobar", "bar"}).Should(ContainElement("foobar", &finding))
+```
+
+The `ContainElement` matcher will fail with a descriptive error message in case of multiple matches when the pointer references a scalar type.
+
+In case of maps, the matching contained elements will be returned with their keys in the map referenced by the pointer.
+
+```go
+var findings map[int]string
+Ω(map[int]string{
+    1: "bar",
+    2: "foobar",
+    3: "foo",
+}).Should(ContainElement(ContainSubstring("foo"), &findings))
 ```
 
 #### ContainElements(element ...interface{})
@@ -970,6 +1000,22 @@ is the only element passed in to `ConsistOf`:
 Note that Go's type system does not allow you to write this as `ConsistOf([]string{"FooBar", "Foo"}...)` as `[]string` and `[]interface{}` are different types - hence the need for this special rule.
 
 
+#### HaveEach(element ...interface{})
+
+```go
+Ω(ACTUAL).Should(HaveEach(ELEMENT))
+```
+
+succeeds if `ACTUAL` solely consists of elements that equal `ELEMENT`.  `ACTUAL` must be an `array`, `slice`, or `map` -- anything else is an error.  For `map`s `HaveEach` searches through the map's values (not keys!).
+
+In order to avoid ambiguity it is an error for `ACTUAL` to be an empty `array`, `slice`, or `map` (or a correctly typed `nil`) -- in these cases it cannot be decided if `HaveEach` should match, or should not match. If in your test it is acceptable for `ACTUAL` to be empty, you can use `Or(BeEmpty(), HaveEach(ELEMENT))` instead.
+
+By default `HaveEach()` uses the `Equal()` matcher under the hood to assert equality between `ACTUAL`'s elements and `ELEMENT`.  You can change this, however, by passing `HaveEach` a `GomegaMatcher`. For example, to check that a slice of strings has an element that matches a substring:
+
+```go
+Ω([]string{"Foo", "FooBar"}).Should(HaveEach(ContainSubstring("Foo")))
+```
+
 #### HaveKey(key interface{})
 
 ```go
@@ -1038,6 +1084,22 @@ and an instance book `var book = Book{...}` - you can use `HaveField` to make as
 ```
 
 If you want to make lots of complex assertions against the fields of a struct take a look at the [`gstruct`package](#gstruct-testing-complex-data-types) package documented below.  
+
+#### HaveExistingField(field interface{})
+
+While `HaveField()` considers a missing field to be an error (instead of non-success), combining it with `HaveExistingField()` allows `HaveField()` to be reused in test contexts other than assertions: for instance, as filters to [`ContainElement(ELEMENT, <POINTER>)`](#containelementelement-interface) or in detecting resource leaks (like leaked file descriptors).
+
+```go
+Ω(ACTUAL).Should(HaveExistingField(FIELD))
+```
+
+succeeds if `ACTUAL` is a struct with a field `FIELD`, regardless of this field's value. It is an error for `ACTUAL` to not be a `struct`. Like `HaveField()`, `HaveExistingField()` supports accessing nested structs using the `.` delimiter. Methods on the struct are invoked by adding a `()` suffix to the `FIELD` - these methods must take no arguments and return exactly one value.
+
+To assert a particular field value, but only if such a field exists in an `ACTUAL` struct, use the composing [`And`](#andmatchers-gomegamatcher) matcher:
+
+```go
+Ω(ACTUAL).Should(And(HaveExistingField(FIELD), HaveField(FIELD, VALUE)))
+```
 
 ### Working with Numbers and Times
 
@@ -1583,6 +1645,39 @@ Eventually(session, 30).Should(gexec.Exit(0))
 Contributions are more than welcome.  Either [open an issue](http://github.com/onsi/gomega/issues) for a matcher you'd like to see or, better yet, test drive the matcher and [send a pull request](https://github.com/onsi/gomega/pulls).
 
 When adding a new matcher please mimic the style use in Gomega's current matchers: you should use the `format` package to format your output, put the matcher and its tests in the `matchers` package, and the constructor in the `matchers.go` file in the top-level package.
+
+## Extending Gomega
+
+The default Gomega can be wrapped by replacing it with an object that implements both the `gomega.Gomega` interface and the `inner` interface:
+
+```go
+type inner interface {
+    Inner() Gomega
+}
+```
+
+The `Inner()` method must return the actual `gomega.Default`. For Gomega to function properly your wrapper methods must call the same method on the real `gomega.Default`  This allows you to wrap every Goemga method call (e.g. `Expect()`) with your own code across your test suite.  You can use this to add random delays, additional logging, or just for tracking the number of `Expect()` calls made.
+
+```go
+func init() {
+    gomega.Default = &gomegaWrapper{
+        inner: gomega.Default,
+    }
+}
+
+type gomegaWrapper struct {
+    inner gomega.Gomega
+}
+func (g *gomegaWrapper) Inner() gomega.Gomega {
+    return g.inner
+}
+func (g *gomegaWrapper) Ω(actual interface{}, extra ...interface{}) types.Assertion {
+    // You now have an opportunity to add a random delay to help identify any timing
+    // dependencies in your tests or can add additional logging.
+    return g.inner.Ω(actual, extra...)
+}
+...
+```
 
 ## `ghttp`: Testing HTTP Clients
 The `ghttp` package provides support for testing http *clients*.  The typical pattern in Go for testing http clients entails spinning up an `httptest.Server` using the `net/http/httptest` package and attaching test-specific handlers that perform assertions.
@@ -2904,5 +2999,295 @@ Describe("server performance", func() {
     })        
 })
 ```
+
+## `gleak`: Finding Leaked Goroutines
+
+![Leakiee](./images/leakiee.png)
+
+The `gleak` package provides support for goroutine leak detection.
+
+> **Please note:** gleak is an experimental new Gomega package.
+
+### Basics
+
+Calling `Goroutines` returns information about all goroutines of a program at
+this moment. `Goroutines` typically gets invoked in the form of
+`Eventually(Goroutines).ShouldNot(...)`. Please note the missing `()` after
+`Goroutines`, as it must be called by `Eventually` and **not before it** with
+its results passed to `Eventually` only once. This does not preclude calling
+`Goroutines()`, such as for taking goroutines snapshots.
+
+Leaked goroutines are then detected by using `gleak`'s `HaveLeaked` matcher on
+the goroutines information. `HaveLeaked` checks the actual list of goroutines
+against a built-in list of well-known runtime and testing framework goroutines,
+as well as against any optionally additional goroutines specifications passed to
+`HaveLeaked`. Good, and thus "non-leaky", Goroutines can be identified in
+multiple ways: such as by the name of a topmost function on a goroutine stack or
+a snapshot of goroutine information taken before a test. Non-leaky goroutines
+can also be identified using basically any Gomega matcher, with `HaveField` or
+`WithTransform` being highly useful in test-specific situations.
+
+The `HaveLeaked` matcher _succeeds_ if it finds any goroutines that are neither
+in the integrated list of well-known goroutines nor in the optionally specified
+`HaveLeaked` arguments. In consequence, any _success_ of `HaveLeaked` actually
+is meant to be a _failure_, because of leaked goroutines. `HaveLeaked` is thus
+mostly used in combination with `ShouldNot` and `NotTo`/`ToNot`.
+
+### Testing for Goroutine Leaks
+
+In its most simple form, just run a goroutine discovery with a leak check right
+_after_ each test in `AfterEach`:
+
+> **Important:** always use `Goroutines` and not `Goroutines()` in the call to
+> `Eventually`. This ensures that the goroutine discovery is correctly done
+> repeatedly as needed and not just a single time before calling `Eventually`.
+
+```go
+AfterEach(func() {
+    Eventually(Goroutines).ShouldNot(HaveLeaked())
+})
+```
+
+Using `Eventually` instead of `Ω`/`Expect` has the benefit of retrying the leak
+check periodically until there is no leak or until a timeout occurs. This
+ensures that goroutines that are (still) in the process of winding down can
+correctly terminate without triggering false positives. Please refer to the
+[`Eventually`](#eventually) section for details on how to change the timeout
+interval (which defaults to 1s) and the polling interval (which defaults to
+10ms).
+
+This form of goroutine leak test can cause false positives in situations where a
+test suite or dependency module uses additional goroutines. This simple form
+only looks at all goroutines _after_ a test has run and filters out all
+_well-known_ "non-leaky" goroutines, such as goroutines from Go's runtime and
+the testing frameworks (such as Go's own testing package and Gomega).
+
+### Using Goroutine Snapshots in Leak Testing
+
+Often, it might be sufficient to cover for additional "non-leaky" goroutines by
+taking a "snapshot" of goroutines _before_ a test and then _afterwards_ use the
+snapshot to filter out the supposedly "non-leaky" goroutines.
+
+Using Ginkgo's v2 `DeferCleanup` this can be expressed in a compact manner and
+without the need for explicitly declaring a variable to carry the list of known
+goroutines over from `BeforeEach` to `AfterEach`. This keeps all things declared
+neatly in a single place.
+
+```go
+BeforeEach(func() {
+    goods := Goroutines()
+    DeferCleanup(func() {
+        Eventually(Goroutines).ShouldNot(HaveLeaked(goods))
+    })
+})
+```
+
+### `HaveLeaked` Matcher
+
+```go
+Eventually(ACTUAL).ShouldNot(HaveLeaked(NONLEAKY1, NONLEAKY2, NONLEAKY3, ...))
+```
+
+causes a test to fail if `ACTUAL` after filtering out the well-known "good" (and
+non-leaky) goroutines of the Go runtime and test frameworks, as well as
+filtering out the additional non-leaky goroutines passed to the matcher, still
+results in one or more goroutines. The ordering of the goroutines does not
+matter.
+
+`HaveLeaked` always takes the built-in list of well-known good goroutines into
+consideration and this list can neither be overriden nor disabled. Additional
+known non-leaky goroutines `NONLEAKY1`, ...  can be passed to `HaveLeaks` either
+in form of `GomegaMatcher`s or in shorthand notation:
+
+- `"foo.bar"` is shorthand for `IgnoringTopFunction("foo.bar")` and filters out
+  any (non-leaky) goroutine with its topmost function on the backtrace stack
+  having the exact name `foo.bar`.
+
+- `"foo.bar..."` is shorthand for `IgnoringTopFunction("foo.bar...")` and
+  filters out any (non-leaky) goroutine with its topmost function on the
+  backtrace stack beginning with the prefix `foo.bar.`; please notice the
+  trailing `.` dot.
+
+- `"foo.bar [chan receive]"` is shorthand for `IgnoringTopFunction("foo.bar
+  [chan receive]")` and filters out any (non-leaky) goroutine where its topmost
+  function on the backtrace stack has the exact name `foo.bar` _and_ the
+  goroutine is in a state beginning with `chan receive`.
+
+- `[]Goroutine` is shorthand for
+  `IgnoringGoroutines(<SLICEOFGOROUTINES>)`: it filters out the specified
+  goroutines, considering them to be non-leaky. The goroutines are identified by
+  their [goroutine IDs](#goroutine-ids).
+
+- `IgnoringInBacktrace("foo.bar.baz")` filters out any (non-leaky) goroutine
+  with `foo.bar.baz` _anywhere_ in its backtrace.
+
+- additionally, any other `GomegaMatcher` can be passed to `HaveLeaked()`, as
+  long as this matcher can work on a passed-in actual value of type
+  `Goroutine`.
+
+### Goroutine Matchers
+
+The `gleak` packages comes with a set of predefined Goroutine matchers, to be
+used with `HaveLeaked`. If these matchers succeed (that is, they match on a
+certain `Goroutine`), then `HaveLeaked` considers the matched goroutine to be
+non-leaky.
+
+#### IgnoringTopFunction(topfname string)
+
+```go
+Eventually(ACTUAL).ShouldNot(HaveLeaked(IgnoringTopFunction(TOPFNAME)))
+```
+
+In its most basic form, `IgnoringTopFunction` succeeds if `ACTUAL` contains a
+goroutine where the name of the topmost function on its call stack (backtrace)
+is `TOPFNAME`, causing `HaveLeaked` to filter out the matched goroutine as
+non-leaky. Different forms of `TOPFNAME` describe different goroutine matching
+criteria:
+
+- `"foo.bar"` matches only if a goroutine's topmost function has this exact name
+  (ignoring any function parameters).
+- `"foo.bar..."` matches if a goroutine's topmost function name starts with the
+  prefix `"foo.bar."`; it doesn't match `"foo.bar"` though.
+- `"foo.bar [state]"` matches if a goroutine's topmost function has this exact
+  name and the goroutine's state begins with the specified state string.
+
+`ACTUAL` must be an array or slice of `Goroutine`s.
+
+#### IgnoringGoroutines(goroutines []Goroutine)
+
+```go
+Eventually(ACTUAL).ShouldNot(HaveLeaked(IgnoringGoroutines(GOROUTINES)))
+```
+
+`IgnoringGoroutines` succeeds if `ACTUAL` contains one or more goroutines which
+are elements of `GOROUTINES`, causing `HaveLeaked` to filter out the matched
+goroutine(s) as non-leaky. `IgnoringGoroutines` compares goroutines by their
+`ID`s (see [Goroutine IDs](#gorotuine-ids) for background information).
+
+`ACTUAL` must be an array or slice of `Goroutine`s.
+
+#### IgnoringInBacktrace(fname string)
+
+```go
+Eventually(Goroutines).ShouldNot(HaveLeaked(IgnoringInBacktrace(FNAME)))
+```
+
+`IgnoringInBacktrace` succeeds if `ACTUAL` contains a groutine where `FNAME` is
+contained anywhere within its call stack (backtrace), causing `HaveLeaked` to
+filter out the matched goroutine as non-leaky. Please note that
+`IgnoringInBacktrace` uses a (somewhat lazy) `strings.Contains` to check for any
+occurence of `FNAME` in backtraces.
+
+`ACTUAL` must be an array or slice of `Goroutine`s.
+
+#### IgnoringCreator(creatorname string)
+
+```go
+Eventually(Goroutines).ShouldNot(HaveLeaked(IgnoringCreator(CREATORNAME)))
+```
+
+In its most basic form, `IgnoringCreator` succeeds if `ACTUAL` contains a
+groutine where the name of the function creating the goroutine matches
+`CREATORNAME`, causing `HaveLeaked` to filter out the matched goroutine(s) as
+non-leaky. `IgnoringCreator` uses `==` for comparing the creator function name.
+
+Different forms of `CREATORNAME` describe different goroutine matching
+criteria:
+
+- `"foo.bar"` matches only if a goroutine's creator function has this exact name
+  (ignoring any function parameters).
+- `"foo.bar..."` matches if a goroutine's creator function name starts with the
+  prefix `"foo.bar."`; it doesn't match `"foo.bar"` though.
+
+### Adjusting Leaky Goroutine Reporting
+
+When `HaveLeaked` finds leaked goroutines, `gleak` prints out a description of
+(only) the _leaked_ goroutines. This is different from panic output that
+contains backtraces of all goroutines.
+
+However, `noleak`'s goroutine dump deliberately is not subject to Gomega's usual
+object rendition controls, such as `format.MaxLength` (see also [Adjusting
+Output](#adjusting-output)).
+
+`noleak` will print leaked goroutine backtraces in a more compact form, with
+function calls and locations combined into single lines. Additionally, `noleak`
+defaults to reporting only the package plus file name and line number, but not
+the full file path. For instance:
+
+    main.foo.func1() at foo/bar.go:123
+
+Setting `noleak.ReportFilenameWithPath` to `true` will instead report full
+source code file paths:
+
+    main.foo.func1() at /home/coolprojects/ohmyleak/mymodule/foo/bar.go:123
+
+### Well-Known Non-Leaky Goroutines
+
+The well-known good (and therefore "non-leaky") goroutines are identified by the
+names of the topmost functions on their stacks (backtraces):
+
+- signal handling:
+  - `os/signal.signal_recv` and `os/signal.loop` (covering
+  varying state),
+  - as well as `runtime.ensureSigM`.
+- Go's built-in [`testing`](https://pkg.go.dev/testing) framework:
+  - `testing.RunTests [chan receive]`,
+  - `testing.(*T).Run [chan receive]`,
+  - and `testing.(*T).Parallel [chan receive]`.
+- the [Ginko testing framework](https://onsi.github.io/ginkgo/):
+  - `github.com/onsi/ginkgo/v2/internal.(*Suite).runNode` (including anonymous
+  inner functions),
+  - the anonymous inner functions of
+  `github.com/onsi/ginkgo/v2/internal/interrupt_handler.(*InterruptHandler).registerForInterrupts`,
+  - and finally
+  `github.com/onsi/ginkgo/internal/specrunner.(*SpecRunner).registerForInterrupts`
+  (for v1 support).
+
+Additionally, any goroutines with `runtime.ReadTrace` in their backtrace stack
+are also considered to be non-leaky.
+
+### Goroutine IDs
+
+In order to detect goroutine identities, we use what is generally termed
+"goroutine IDs". These IDs appear in runtime stack dumps ("backtrace"). But …
+are these goroutine IDs even unambiguous? What are their "guarantees", if there
+are any at all?
+
+First, Go's runtime code uses the identifier (and thus term) [`goid` for
+Goroutine
+IDs](https://github.com/golang/go/search?q=goidgen&unscoped_q=goidgen). Good to
+know in case you need to find your way around Go's runtime code.
+
+Now, based on [Go's `goid` runtime allocation
+code](https://github.com/golang/go/blob/release-branch.go1.18/src/runtime/proc.go#L4130),
+goroutine IDs never get reused – unless you manage to make the 64bit "master
+counter" of the Go runtime scheduler to wrap around. However, not all goroutine
+IDs up to the largest one currently seen might ever be used, because as an
+optimization goroutine IDs are always assigned to Go's "P" processors for
+assignment to newly created "G" goroutines in batches of 16. In consequence,
+there may be gaps and later goroutines might have lower goroutine IDs if they
+get created from a different P.
+
+Finally, there's [Scott Mansfield's blog post on Goroutine
+IDs](https://blog.sgmansfield.com/2015/12/goroutine-ids/). To sum up Scott's
+point of view: don't use goroutine IDs. He spells out good reasons for why you
+should not use them. Yet, logging, debugging and testing looks like a sane and
+solid exemption from his rule, not least `runtime.Stack` includes the `goids`
+for
+some reason.
+
+### Credits
+
+The _Leakiee the gopher_ mascot clearly has been inspired by the Go gopher art
+work of [Renee French](http://reneefrench.blogspot.com/).
+
+The `gleak` package was heavily inspired by Uber's fine
+[goleak](https://github.com/uber-go/goleak) goroutine leak detector package.
+While `goleak` can be used with Gomega and Ginkgo in a very specific form, it
+unfortunately was never designed to be (optionally) used with a matcher library
+to unlock the full potential of reasoning about leaky goroutines. In fact, the
+crucial element of discovering goroutines is kept internal in `goleak`. In
+consequence, Gomega's `gleak` package uses its own goroutine discovery and is
+explicitly designed to perfectly blend in with Gomega (and Ginkgo).
 
 {% endraw  %}

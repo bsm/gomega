@@ -214,15 +214,6 @@ func MatchJSON(json interface{}) types.GomegaMatcher {
 	}
 }
 
-//MatchXML succeeds if actual is a string or stringer of XML that matches
-//the expected XML.  The XMLs are decoded and the resulting objects are compared via
-//reflect.DeepEqual so things like whitespaces shouldn't matter.
-func MatchXML(xml interface{}) types.GomegaMatcher {
-	return &matchers.MatchXMLMatcher{
-		XMLToMatch: xml,
-	}
-}
-
 //BeEmpty succeeds if actual is empty.  Actual must be of type string, array, map, chan, or slice.
 func BeEmpty() types.GomegaMatcher {
 	return &matchers.BeEmptyMatcher{}
@@ -247,16 +238,26 @@ func BeZero() types.GomegaMatcher {
 	return &matchers.BeZeroMatcher{}
 }
 
-//ContainElement succeeds if actual contains the passed in element.
-//By default ContainElement() uses Equal() to perform the match, however a
-//matcher can be passed in instead:
+//ContainElement succeeds if actual contains the passed in element. By default
+//ContainElement() uses Equal() to perform the match, however a matcher can be
+//passed in instead:
 //    Expect([]string{"Foo", "FooBar"}).Should(ContainElement(ContainSubstring("Bar")))
 //
-//Actual must be an array, slice or map.
-//For maps, ContainElement searches through the map's values.
-func ContainElement(element interface{}) types.GomegaMatcher {
+//Actual must be an array, slice or map. For maps, ContainElement searches
+//through the map's values.
+//
+//If you want to have a copy of the matching element(s) found you can pass a
+//pointer to a variable of the appropriate type. If the variable isn't a slice
+//or map, then exactly one match will be expected and returned. If the variable
+//is a slice or map, then at least one match is expected and all matches will be
+//stored in the variable.
+//
+//    var findings []string
+//    Expect([]string{"Foo", "FooBar"}).Should(ContainElement(ContainSubString("Bar", &findings)))
+func ContainElement(element interface{}, result ...interface{}) types.GomegaMatcher {
 	return &matchers.ContainElementMatcher{
 		Element: element,
+		Result:  result,
 	}
 }
 
@@ -311,6 +312,20 @@ func ContainElements(elements ...interface{}) types.GomegaMatcher {
 	}
 }
 
+//HaveEach succeeds if actual solely contains elements that match the passed in element.
+//Please note that if actual is empty, HaveEach always will succeed.
+//By default HaveEach() uses Equal() to perform the match, however a
+//matcher can be passed in instead:
+//    Expect([]string{"Foo", "FooBar"}).Should(HaveEach(ContainSubstring("Foo")))
+//
+//Actual must be an array, slice or map.
+//For maps, HaveEach searches through the map's values.
+func HaveEach(element interface{}) types.GomegaMatcher {
+	return &matchers.HaveEachMatcher{
+		Element: element,
+	}
+}
+
 //HaveKey succeeds if actual is a map with the passed in key.
 //By default HaveKey uses Equal() to perform the match, however a
 //matcher can be passed in instead:
@@ -358,6 +373,19 @@ func HaveField(field string, expected interface{}) types.GomegaMatcher {
 	return &matchers.HaveFieldMatcher{
 		Field:    field,
 		Expected: expected,
+	}
+}
+
+// HaveExistingField succeeds if actual is a struct and the specified field
+// exists.
+//
+// HaveExistingField can be combined with HaveField in order to cover use cases
+// with optional fields. HaveField alone would trigger an error in such situations.
+//
+//     Expect(MrHarmless).NotTo(And(HaveExistingField("Title"), HaveField("Title", "Supervillain")))
+func HaveExistingField(field string) types.GomegaMatcher {
+	return &matchers.HaveExistingFieldMatcher{
+		Field: field,
 	}
 }
 
