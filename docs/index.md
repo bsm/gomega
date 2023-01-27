@@ -148,7 +148,7 @@ Or you can write:
 Assertions about errors on functions with multiple return values can be made as follows (and in a lazy way when not asserting that all other return values are zero values):
 
 ```go
-_, _, _, err := MUltipleReturnValuesFunc()
+_, _, _, err := MultipleReturnValuesFunc()
 Ω(err).Should(HaveOccurred())
 ```
 
@@ -158,7 +158,7 @@ Alternatively, such error assertions on multi return value functions can be simp
 Ω(MultipleReturnValuesFunc()).Error().Should(HaveOccurred())
 ```
 
-Similar, asserting that no error occured is supported, too (where the other return values are allowed to take on any value):
+Similar, asserting that no error occurred is supported, too (where the other return values are allowed to take on any value):
 
 ```go
 Ω(MultipleReturnValuesFunc()).Error().ShouldNot(HaveOccured())
@@ -222,7 +222,6 @@ These recursive object renditions are performed by the `format` subpackage.  `fo
 - Implementing `format.GomegaStringer`: If `GomegaStringer` interface is implemented on an object, Gomega will call `GomegaString` for an object's string representation. This is regardless of the `format.UseStringerRepresentation` value. Best practice to implement this interface is to implement it in a helper test file (e.g. `helper_test.go`) to avoid leaking it to your package's exported API.
 - `format.UseStringerRepresentation = false`: Gomega does *not* call `String` or `GoString` on objects that satisfy the `Stringer` and `GoStringer` interfaces.  Oftentimes such representations, while more human readable, do not contain all the relevant information associated with an object thereby making it harder to understand why a test might be failing.  If you'd rather see the output of `String` or `GoString` set this property to `true`.
 
-
 > For a tricky example of why `format.UseStringerRepresentation = false` is your friend, check out issue [#37](https://github.com/onsi/gomega/issues/37).
 
 - `format.PrintContextObjects = false`: Gomega by default will not print the content of objects satisfying the context.Context interface, due to too much output. If you want to enable displaying that content, set this property to `true`.
@@ -236,6 +235,16 @@ fmt.Println(format.Object(theThingYouWantToPrint, 1))
 - `format.TruncatedDiff = true`: Gomega will truncate long strings and only show where they differ. You can set this to `false` if
 you want to see the full strings.
 
+You can also register your own custom formatter using `format.RegisterCustomFormatter(f)`.  Custom formatters must be of type `type CustomFormatter func(value interface{}) (string, bool)`.  Gomega will pass in any objects to be formatted to each registered custom formatter.  A custom formatter signals that it will handle the passed-in object by returning a formatted string and `true`.  If it does not handle the object it should return `"", false`.  Strings returned by custom formatters will _not_ be truncated (though they may be truncated if the object being formatted is within another struct).  Custom formatters take precedence of `GomegaStringer` and `format.UseStringerRepresentation`.
+
+`format.RegisterCustomFormatter` returns a key that can be used to unregister the custom formatter:
+
+```go
+key := format.RegisterCustomFormatter(myFormatter)
+...
+format.UnregisterCustomFormatter(key)
+```
+
 ## Making Asynchronous Assertions
 
 Gomega has support for making *asynchronous* assertions.  There are two functions that provide this support: `Eventually` and `Consistently`.
@@ -245,17 +254,32 @@ Gomega has support for making *asynchronous* assertions.  There are two function
 `Eventually` checks that an assertion *eventually* passes.  `Eventually` blocks when called and attempts an assertion periodically until it passes or a timeout occurs.  Both the timeout and polling interval are configurable as optional arguments:
 
 ```go
-Eventually(ACTUAL, (TIMEOUT), (POLLING_INTERVAL)).Should(MATCHER)
+Eventually(ACTUAL, (TIMEOUT), (POLLING_INTERVAL), (context.Context)).Should(MATCHER)
 ```
 
-The first optional argument is the timeout (which defaults to 1s), the second is the polling interval (which defaults to 10ms).  Both intervals can be specified as time.Duration, parsable duration strings (e.g. "100ms") or `float64` (in which case they are interpreted as seconds).
+The first optional argument is the timeout (which defaults to 1s), the second is the polling interval (which defaults to 10ms).  Both intervals can be specified as time.Duration, parsable duration strings (e.g. "100ms") or `float64` (in which case they are interpreted as seconds).  You can also provide a `context.Context` which - when cancelled - will instruct `Eventually` to stop and exit with a failure message.  You are also allowed to pass in the `context.Context` _first_ as `Eventually(ctx, ACTUAL)`.
 
 > As with synchronous assertions, you can annotate asynchronous assertions by passing either a format string and optional inputs or a function of type `func() string` after the `GomegaMatcher`.
 
-Alternatively, the timeout and polling interval can also be specified by chaining `WithTimeout` and `WithPolling` to `Eventually`:
+Alternatively, the timeout and polling interval can also be specified by chaining `Within` and `ProbeEvery` or `WithTimeout` and `WithPolling` to `Eventually`:
 
 ```go
 Eventually(ACTUAL).WithTimeout(TIMEOUT).WithPolling(POLLING_INTERVAL).Should(MATCHER)
+Eventually(ACTUAL).Within(TIMEOUT).ProbeEvery(POLLING_INTERVAL).Should(MATCHER)
+```
+
+You can also configure the context in this way:
+
+```go
+Eventually(ACTUAL).WithTimeout(TIMEOUT).WithPolling(POLLING_INTERVAL).WithContext(ctx).Should(MATCHER)
+```
+
+When no explicit timeout is provided, `Eventually` will use the default timeout.  However if no explicit timeout is provided _and_ a context is provided, `Eventually` will not apply a timeout but will instead keep trying until the context is cancelled.  If both a context and a timeout are provided, `Eventually` will keep trying until either the context is cancelled or time runs out, whichever comes first.
+
+You can also ensure a number of consecutive pass before continuing with `MustPassRepeatedly`:
+
+```go
+Eventually(ACTUAL).MustPassRepeatedly(NUMBER).Should(MATCHER)
 ```
 
 Eventually works with any Gomega compatible matcher and supports making assertions against three categories of `ACTUAL` value:
@@ -272,7 +296,7 @@ Eventually(c, "50ms").Should(BeClosed())
 
 will poll the channel repeatedly until it is closed.  In this example `Eventually` will block until either the specified timeout of 50ms has elapsed or the channel is closed, whichever comes first.
 
-Several Gomega libraries allow you to use Eventually in this way.  For example, the `gomega/gexec` package allows you to block until a `*gexec.Session` exits successfuly via:
+Several Gomega libraries allow you to use Eventually in this way.  For example, the `gomega/gexec` package allows you to block until a `*gexec.Session` exits successfully via:
 
 ```go
 Eventually(session).Should(gexec.Exit(0))
@@ -301,7 +325,7 @@ In both cases you should always pass `Eventually` a function that, when polled, 
 
 #### Category 2: Making `Eventually` assertions on functions
 
-`Eventually` can be passed functions that **take no arguments** and **return at least one value**.  When configured this way, `Eventually` will poll the function repeatedly and pass the first returned value to the matcher.
+`Eventually` can be passed functions that **return at least one value**.  When configured this way, `Eventually` will poll the function repeatedly and pass the first returned value to the matcher.
 
 For example:
 
@@ -315,7 +339,7 @@ will repeatedly poll `client.FetchCount` until the `BeNumerically` matcher is sa
 
 > Note that this example could have been written as `Eventually(client.FetchCount).Should(BeNumerically(">=", 17))`
 
-If multple values are returned by the function, `Eventually` will pass the first value to the matcher and require that all others are zero-valued.  This allows you to pass `Eventually` a function that returns a value and an error - a common pattern in Go.
+If multiple values are returned by the function, `Eventually` will pass the first value to the matcher and require that all others are zero-valued.  This allows you to pass `Eventually` a function that returns a value and an error - a common pattern in Go.
 
 For example, consider a method that returns a value and an error:
 
@@ -331,13 +355,65 @@ Eventually(FetchFromDB).Should(Equal("got it"))
 
 will pass only if and when the returned error is `nil` *and* the returned string satisfies the matcher.
 
-It is important to note that the function passed into Eventually is invoked **synchronously** when polled.  `Eventually` does not (in fact, it cannot) kill the function if it takes longer to return than `Eventually`'s configured timeout.  You should design your functions with this in mind.
+
+Eventually can also accept functions that take arguments, however you must provide those arguments using `Eventually().WithArguments()`.  For example, consider a function that takes a user-id and makes a network request to fetch a full name:
+
+```go
+func FetchFullName(userId int) (string, error)
+```
+
+You can poll this function like so:
+
+```go
+Eventually(FetchFullName).WithArguments(1138).Should(Equal("Wookie"))
+```
+
+`WithArguments()` supports multiple arguments as well as variadic arguments.
+
+It is important to note that the function passed into Eventually is invoked **synchronously** when polled.  `Eventually` does not (in fact, it cannot) kill the function if it takes longer to return than `Eventually`'s configured timeout.  This is where using a `context.Context` can be helpful.  Here is an example that leverages Gingko's support for interruptible nodes and spec timeouts:
+
+```go
+It("fetches the correct count", func(ctx SpecContext) {
+    Eventually(func() int {
+        return client.FetchCount(ctx, "/users")
+    }, ctx).Should(BeNumerically(">=", 17))
+}, SpecTimeout(time.Second))
+```
+
+now when the spec times out both the `client.FetchCount` function and `Eventually` will be signaled and told to exit. you can also use `Eventually().WithContext(ctx)` to provide the context.
+
+
+Since functions that take a context.Context as a first-argument are common in Go, `Eventually` supports automatically injecting the provided context into the function.  This plays nicely with `WithArguments()` as well.  You can rewrite the above example as:
+
+```go
+It("fetches the correct count", func(ctx SpecContext) {
+    Eventually(client.FetchCount).WithContext(ctx).WithArguments("/users").Should(BeNumerically(">=", 17))
+}, SpecTimeout(time.Second))
+```
+
+now the `ctx` `SpecContext` is used both by `Eventually` and `client.FetchCount` and the `"/users"` argument is passed in after the `ctx` argument.
+
+The use of a context also allows you to specify a single timeout across a collection of `Eventually` assertions:
+
+```go
+It("adds a few books and checks the count", func(ctx SpecContext) {
+    intialCount := client.FetchCount(ctx, "/items")
+    client.AddItem(ctx, "foo")
+    client.AddItem(ctx, "bar")
+    //note that there are several supported ways to pass in the context.  All are equivalent:
+    Eventually(ctx, client.FetchCount).WithArguments("/items").Should(BeNumerically("==", initialCount + 2))
+    Eventually(client.FetchItems).WithContext(ctx).Should(ContainElement("foo"))
+    Eventually(client.FetchItems, ctx).Should(ContainElement("foo"))
+}, SpecTimeout(time.Second * 5))
+```
+
+In addition, Gingko's `SpecContext` allows Gomega to tell Ginkgo about the status of a currently running `Eventually` whenever a Progress Report is generated.  So, if a spec times out while running an `Eventually` Ginkgo will not only show you which `Eventually` was running when the timeout occurred, but will also include the failure the `Eventually` was hitting when the timeout occurred.
 
 #### Category 3: Making assertions _in_ the function passed into `Eventually`
 
 When testing complex systems it can be valuable to assert that a *set* of assertions passes `Eventually`.  `Eventually` supports this by accepting functions that take **a single `Gomega` argument** and **return zero or more values**.
 
-Here's an example that makes some asssertions and returns a value and error:
+Here's an example that makes some assertions and returns a value and error:
 
 ```go
 Eventually(func(g Gomega) (Widget, error) {
@@ -366,6 +442,18 @@ Eventually(func(g Gomega) {
 
 will rerun the function until all assertions pass.
 
+You can also pass additional arguments to functions that take a Gomega.  The only rule is that the Gomega argument must be first.  If you also want to pass the context attached to `Eventually` you must ensure that is the second argument.  For example:
+
+```go
+Eventually(func(g Gomega, ctx context.Context, path string, expected ...string){
+    tok, err := client.GetToken(ctx)
+    g.Expect(err).NotTo(HaveOccurred())
+
+    elements, err := client.Fetch(ctx, tok, path)
+    g.Expect(err).NotTo(HaveOccurred())
+    g.Expect(elements).To(ConsistOf(expected))
+}).WithContext(ctx).WithArguments("/names", "Joe", "Jane", "Sam").Should(Succeed())
+```
 
 ### Consistently
 
@@ -379,18 +467,18 @@ Consistently(func() []int {
 }).Should(BeNumerically("<", 10))
 ```
 
-`Consistently` will poll the passed in function repeatedly and check the return value against the `GomegaMatcher`.  `Consistently` blocks and only returns when the desired duration has elapsed or if the matcher fails.  The default value for the wait-duration is 100 milliseconds.  The default polling interval is 10 milliseconds.  Like `Eventually`, you can change these values by passing them in just after your function:
+`Consistently` will poll the passed in function repeatedly and check the return value against the `GomegaMatcher`.  `Consistently` blocks and only returns when the desired duration has elapsed or if the matcher fails or if an (optional) passed-in context is cancelled.  The default value for the wait-duration is 100 milliseconds.  The default polling interval is 10 milliseconds.  Like `Eventually`, you can change these values by passing them in just after your function:
 
 ```go
-Consistently(ACTUAL, DURATION, POLLING_INTERVAL).Should(MATCHER)
+Consistently(ACTUAL, (DURATION), (POLLING_INTERVAL), (context.Context)).Should(MATCHER)
 ```
 
-As with `Eventually`, these can be `time.Duration`s, string representations of a `time.Duration` (e.g. `"200ms"`) or `float64`s that are interpreted as seconds.
+As with `Eventually`, the duration parameters can be `time.Duration`s, string representations of a `time.Duration` (e.g. `"200ms"`) or `float64`s that are interpreted as seconds.
 
-Also as with `Eventually`, `Consistently` supports chaining `WithTimeout` and `WithPolling` in the form of:
+Also as with `Eventually`, `Consistently` supports chaining `WithTimeout`, `WithPolling`, `WithContext` and `WithArguments` in the form of:
 
 ```go
-Consistently(ACTUAL).WithTimeout(DURATION).WithPolling(POLLING_INTERVAL).Should(MATCHER)
+Consistently(ACTUAL).WithTimeout(DURATION).WithPolling(POLLING_INTERVAL).WithContext(ctx).WithArguments(...).Should(MATCHER)
 ```
 
 `Consistently` tries to capture the notion that something "does not eventually" happen.  A common use-case is to assert that no goroutine writes to a channel for a period of time.  If you pass `Consistently` an argument that is not a function, it simply passes that argument to the matcher.  So we can assert that:
@@ -403,7 +491,83 @@ To assert that nothing gets sent to a channel.
 
 As with `Eventually`, you can also pass `Consistently` a function.  In fact, `Consistently` works with the three categories of `ACTUAL` value outlined for `Eventually` in the section above.
 
+If `Consistently` is passed a `context.Context` it will exit if the context is cancelled - however it will always register the cancellation of the context as a failure.  That is, the context is not used to control the duration of `Consistently` - that is always done by the `DURATION` parameter; instead, the context is used to allow `Consistently` to bail out early if it's time for the spec to finish up (e.g. a timeout has elapsed, or the user has sent an interrupt signal).
+
+When no explicit duration is provided, `Consistently` will use the default duration.  Unlike `Eventually`, this behavior holds whether or not a context is provided.
+
 > Developers often try to use `runtime.Gosched()` to nudge background goroutines to run.  This can lead to flaky tests as it is not deterministic that a given goroutine will run during the `Gosched`.  `Consistently` is particularly handy in these cases: it polls for 100ms which is typically more than enough time for all your Goroutines to run.  Yes, this is basically like putting a time.Sleep() in your tests... Sometimes, when making negative assertions in a concurrent world, that's the best you can do!
+
+### Bailing Out Early - Polling Functions
+
+There are cases where you need to signal to `Eventually` and `Consistently` that they should stop trying.  Gomega provides`StopTrying(message string)` to allow you to send that signal.  There are two ways to use `StopTrying`.
+
+First, you can return `StopTrying` as an error. Consider, for example, the case where `Eventually` is searching through a set of possible queries with a server:
+
+```go
+playerIndex, numPlayers := 0, 11
+Eventually(func() (string, error) {
+    if playerIndex == numPlayers {
+        return "", StopTrying("no more players left")
+    }
+    name := client.FetchPlayer(playerIndex)
+    playerIndex += 1
+    return name, nil
+}).Should(Equal("Patrick Mahomes"))
+```
+
+Here we return a `StopTrying` error to tell `Eventually` that we've looked through all possible players and that it should stop.
+
+You can also call `StopTrying(...).Now()` to immediately end execution of the function. Consider, for example, the case of a client communicating with a server that experiences an irrevocable error:
+
+```go
+Eventually(func() []string {
+    names, err := client.FetchAllPlayers()
+    if err == client.IRRECOVERABLE_ERROR {
+        StopTrying("An irrecoverable error occurred").Now()
+    }
+    return names
+}).Should(ContainElement("Patrick Mahomes"))
+```
+
+calling `.Now()` will trigger a panic that will signal to `Eventually` that it should stop trying.
+
+You can also return `StopTrying()` errors and use `StopTrying().Now()` with `Consistently`.
+
+Both `Eventually` and `Consistently` always treat the `StopTrying()` signal as a failure.   The failure message will include the message passed in to `StopTrying()`.
+
+You can add additional information to this failure message in a few ways.  You can wrap an error via `StopTrying(message).Wrap(wrappedErr)` - now the output will read `<message>: <wrappedErr.Error()>`.
+
+You can also attach arbitrary objects to `StopTrying()` via `StopTrying(message).Attach(description string, object any)`.  Gomega will run the object through Gomega's standard formatting library to build a consistent representation for end users.  You can attach multiple objects in this way and the output will look like:
+
+```
+Told to stop trying after <X>
+
+<message>: <wrappedErr.Error()>
+    <description>:
+        <formatted-object>
+    <description>:
+        <formatted-object>
+```
+
+### Bailing Out Early - Matchers
+
+Just like functions being polled, matchers can also indicate if `Eventually`/`Consistently` should stop polling.  Matchers implement a `Match` method with the following signature:
+
+```go
+Match(actual interface{}) (success bool, err error)
+```
+
+If a matcher returns `StopTrying` for `error`, or calls `StopTrying(...).Now()`, `Eventually` and `Consistently` will stop polling and fail: `StopTrying` **always** signifies a failure.
+
+> Note: An alternative mechanism for having matchers bail out early is documented in the [custom matchers section below](#aborting-eventuallyconsistently).  This mechanism, which entails implementing a `MatchMayChangeIntheFuture(<actual>) bool` method, allows matchers to signify that no future change is possible out-of-band of the call to the matcher.
+
+### Changing the Polling Interval Dynamically
+
+You typically configure the polling interval for `Eventually` and `Consistently` using the `.WithPolling()` or `.ProbeEvery()` chaining methods.  Sometimes, however, a polled function or matcher might want to signal that a service is unavailable but should be tried again after a certain duration.
+
+You can signal this to both `Eventually` and `Consistently` using `TryAgainAfter(<duration>)`.  This error-signal operates like `StopTrying()`: you can return `TryAgainAfter(<duration>)` as an error or throw a panic via `TryAgainAfter(<duration>).Now()`.  In either case, both `Eventually` and `Consistently` will wait for the specified duration before trying again.
+
+If a timeout occurs after the `TryAgainAfter` signal is sent but _before_ the next poll occurs both `Eventually` _and_ `Consistently` will always fail and print out the content of `TryAgainAfter`.  The default message is `"told to try again after <duration>"` however, as with `StopTrying` you can use `.Wrap()` and `.Attach()` to wrap an error and attach additional objects to include in the message, respectively.
 
 ### Modifying Default Intervals
 
@@ -500,6 +664,14 @@ It is an error for both `ACTUAL` and `EXPECTED` to be nil, you should use `BeNil
 When both `ACTUAL` and `EXPECTED` are a very long strings, it will attempt to pretty-print the diff and display exactly where they differ.
 
 > For asserting equality between numbers of different types, you'll want to use the [`BeNumerically()`](#benumericallycomparator-string-compareto-interface) matcher.
+
+#### BeComparableTo(expected interface{}, options ...cmp.Option)
+
+```go
+Ω(ACTUAL).Should(BeComparableTo(EXPECTED, options ...cmp.Option))
+```
+
+uses [`gocmp.Equal`](http://github.com/google/go-cmp) from `github.com/google/go-cmp` to compare `ACTUAL` with `EXPECTED`.  This performs a deep object comparison like `reflect.DeepEqual` but offers a few additional configuration options.  Learn more at the [go-cmp godocs](https://pkg.go.dev/github.com/google/go-cmp).
 
 #### BeEquivalentTo(expected interface{})
 
@@ -628,7 +800,9 @@ succeeds if `ACTUAL` is a non-nil `error` that matches `EXPECTED`. `EXPECTED` mu
 
 - A string, in which case `ACTUAL.Error()` will be compared against `EXPECTED`.
 - A matcher, in which case `ACTUAL.Error()` is tested against the matcher.
-- An error, in which case `ACTUAL` and `EXPECTED` are compared via `reflect.DeepEqual()`. If they are not deeply equal, they are tested by `errors.Is(ACTUAL, EXPECTED)`. (The latter allows to test whether `ACTUAL` wraps an `EXPECTED` error.)
+- An error, in which case any of the following is satisfied:
+    - `errors.Is(ACTUAL, EXPECTED)` returns `true`
+    - `ACTUAL` or any of the errors it wraps (directly or indirectly) equals `EXPECTED` in terms of `reflect.DeepEqual()`.
 
 Any other type for `EXPECTED` is an error.
 
@@ -966,6 +1140,29 @@ The difference between the `ContainElements` and `ConsistOf` matchers is that th
 
 succeeds if `ACTUAL` equals one of the elements passed into the matcher. When a single element `ELEMENT` of type `array` or `slice` is passed into the matcher, `BeElementOf` succeeds if `ELEMENT` contains an element that equals `ACTUAL` (reverse of `ContainElement`). `BeElementOf` always uses the `Equal()` matcher under the hood to assert equality.
 
+#### BeKeyOf(m interface{})
+
+```go
+Ω(ACTUAL).Should(BeKeyOf(MAP))
+```
+
+succeeds if `ACTUAL` equals one of the keys of `MAP`. It is an error for `MAP` to be of any type other than a map. `BeKeyOf` always uses the `Equal()` matcher under the hood to assert equality of `ACTUAL` with a map key.
+
+`BeKeyOf` can be used in situations where it is not possible to rewrite an assertion to use the more idiomatic `HaveKey`: one use is in combination with `ContainElement` doubling as a filter. For instance, the following example asserts that all expected specific sprockets are present in a larger list of sprockets:
+
+```go
+var names = map[string]struct {
+	detail string
+}{
+	"edgy_emil":              {detail: "sprocket_project_A"},
+	"furious_freddy":         {detail: "sprocket_project_B"},
+}
+
+var canaries []Sprocket
+Expect(projects).To(ContainElement(HaveField("Name", BeKeyOf(names)), &canaries))
+Expect(canaries).To(HaveLen(len(names)))
+```
+
 #### ConsistOf(element ...interface{})
 
 ```go
@@ -1167,7 +1364,7 @@ Any other comparator is an error.
 
 #### HaveValue(matcher types.GomegaMatcher)
 
-`HaveValue` applies `MATCHER` to the value that results from dereferencing `ACTUAL` in case of a pointer or an interface, or otherwise `ACTUAL` itself. Pointers and interfaces are dereferenced multiple times as necessary, with a limit of at most 31 dereferences.
+`HaveValue` applies `MATCHER` to the value that results from dereferencing `ACTUAL` in case of a pointer or an interface, or otherwise `ACTUAL` itself. Pointers and interfaces are dereferenced multiple times as necessary, with a limit of at most 31 dereferences. It will fail if the pointer value is `nil`:
 
 ```go
 Expect(ACTUAL).To(HaveValue(MATCHER))
@@ -1182,6 +1379,12 @@ Expect(i).To(HaveValue(Equal(42)))
 ```
 
 `HaveValue` can be used, for instance, in tests and custom matchers where the it doesn't matter (as opposed to `PointTo`) if a value first needs to be dereferenced or not. This is especially useful to custom matchers that are to be used in mixed contexts of pointers as well as non-pointers.
+
+Please note that negating the outcome of `HaveValue(nil)` won't suppress any error; for instance, in order to assert not having a specific value while still accepting `nil` the following matcher expression might be used:
+
+```go
+Or(BeNil(), Not(HaveValue(...)))
+```
 
 ### Working with HTTP responses
 
@@ -1436,11 +1639,11 @@ type GomegaMatcher interface {
 }
 ```
 
-For the simplest cases, new matchers can be [created by composition](#composing-matchers).  In addition to this chapter, please take a look at the [Building Custom Matchers](https://onsi.github.io/ginkgo/#building-custom-matchers) section of the Ginkgo and Gomega patterns chapter in the Ginkgo docs.  Gomega's building blocks have evolved since the Gomega docs were written and while this section remains valid - the [Building Custom Matchers](https://onsi.github.io/ginkgo/#building-custom-matchers) docs present a modern way to more quickly construct custom matchers.
+For the simplest cases, new matchers can be [created by composition](#composing-matchers).  Please also take a look at the [Building Custom Matchers](https://onsi.github.io/ginkgo/#building-custom-matchers) section of the Ginkgo and Gomega patterns chapter in the Ginkgo docs for additional examples.
 
-But writing domain-specific custom matchers is also trivial and highly encouraged.  Let's work through an example.
+In addition to composition, however, it is fairly straightforward to build domain-specific custom matchers.  You can create new types that satisfy the `GomegaMatcher` interface *or* you can use the `gcustom` package to build matchers out of simple functions.
 
-> The `GomegaMatcher` interface is defined in the `types` subpackage.
+Let's work through an example and illustrate both approaches.
 
 ### A Custom Matcher: RepresentJSONifiedObject(EXPECTED interface{})
 
@@ -1508,7 +1711,49 @@ Let's break this down:
     - It is guaranteed that `FailureMessage` and `NegatedFailureMessage` will only be called *after* `Match`, so you can save off any state you need to compute the messages in `Match`.
 - Finally, it is common for matchers to make extensive use of the `reflect` library to interpret the generic inputs they receive.  In this case, the `representJSONMatcher` goes through some `reflect` gymnastics to create a pointer to a new object with the same type as the `expected` object, read and decode JSON from `actual` into that pointer, and then deference the pointer and compare the result to the `expected` object.
 
-You might test drive this matcher while writing it using Ginkgo.  Your test might look like:
+### gcustom: A convenient mechanism for building custom matchers
+
+[`gcustom`](https://github.com/onsi/gomega/tree/master/gcustom) is a package that makes building custom matchers easy.  Rather than define new types, you can simply provide `gcustom.MakeMatcher` with a function.  The [godocs](https://pkg.go.dev/github.com/onsi/gomega/gcustom) for `gcustom` have all the details but here's how `RepresentJSONifiedObject` could be implemented with `gcustom`:
+
+
+```go
+package json_response_matcher
+
+import (
+    "github.com/onsi/gomega/types"
+    "github.com/onsi/gomega/gcustom"
+
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "reflect"
+)
+
+func RepresentJSONifiedObject(expected interface{}) types.GomegaMatcher {
+    return gcustom.MakeMatcher(func(response *http.Response) (bool, err) {
+        pointerToObjectOfExpectedType := reflect.New(reflect.TypeOf(matcher.expected)).Interface()
+        err = json.NewDecoder(response.Body).Decode(pointerToObjectOfExpectedType)
+        if err != nil {
+            return false, fmt.Errorf("Failed to decode JSON: %w", err.Error())
+        }
+
+        decodedObject := reflect.ValueOf(pointerToObjectOfExpectedType).Elem().Interface()
+        return reflect.DeepEqual(decodedObject, matcher.expected), nil        
+    }).WithTemplate("Expected:\n{{.FormattedActual}}\n{{.To}} contain the JSON representation of\n{{format .Data 1}}").WithTemplateData(expected)
+}
+```
+
+The [`gcustom` godocs](https://pkg.go.dev/github.com/onsi/gomega/gcustom) go into much more detail but we can point out a few of the convenient features of `gcustom` here:
+
+- `gcustom` can take a matcher function that accepts a concrete type.  In our case `func(response *https.Response) (bool, err)` - when this is done, the matcher built by `gcustom` takes care of all the type-checking for you and will only call your match function if an object of the correct type is asserted against.  If you want to do your own type-checking (or want to build a matcher that works with multiple types) you can use `func(actual any) (bool, err)` instead.
+- Rather than implement different functions for the two different failure messages you can provide a single template.  `gcustom` provides template variables to help you render the failure messages depending on positive failures vs negative failures.  For example, the variable `{{.To}}` will render "to" for positive failures and "not to" for negative failures.
+- You can pass additional data to your template with `WithTemplateData(<data>)` - in this case we pass in the expected object so that the template can include it in the output.  We do this with the expression `{{format .Data 1}}`.  gcustom provides the `format` template function to render objects using Ginkgo's object formatting system (the `1` here denotes the level of indentation).
+
+`gcustom` also supports a simpler mechanism for generating messages: `.WithMessage()` simply takes a string and builds a canned message out of that string.  You can also provide precompiled templates if you want to avoid the cost of compiling a template every time the matcher is called.
+
+### Testing Custom Matchers
+
+Whether you create a new `representJSONMatcher` type, or use `gcustom` you might test drive this matcher while writing it using Ginkgo.  Your test might look like:
 
 ```go
 package json_response_matcher_test
@@ -1610,6 +1855,8 @@ This also offers an example of what using the matcher would look like in your te
 
 ### Aborting Eventually/Consistently
 
+**Note: This section documents the `MatchMayChangeInTheFuture` method for aborting `Eventually`/`Consistently`.  A more up-to-date approach that uses the `StopTrying` error is documented [earlier](#bailing-out-early--matchers).**
+
 There are sometimes instances where `Eventually` or `Consistently` should stop polling a matcher because the result of the match simply cannot change.
 
 For example, consider a test that looks like:
@@ -1656,7 +1903,7 @@ type inner interface {
 }
 ```
 
-The `Inner()` method must return the actual `gomega.Default`. For Gomega to function properly your wrapper methods must call the same method on the real `gomega.Default`  This allows you to wrap every Goemga method call (e.g. `Expect()`) with your own code across your test suite.  You can use this to add random delays, additional logging, or just for tracking the number of `Expect()` calls made.
+The `Inner()` method must return the actual `gomega.Default`. For Gomega to function properly your wrapper methods must call the same method on the real `gomega.Default`  This allows you to wrap every Gomega method call (e.g. `Expect()`) with your own code across your test suite.  You can use this to add random delays, additional logging, or just for tracking the number of `Expect()` calls made.
 
 ```go
 func init() {
@@ -2220,7 +2467,7 @@ AfterSuite(func() {
 })
 ```
 
-> By default, `gexec.Build` uses the GOPATH specified in your environment.  You can also use `gexec.BuildIn(gopath string, packagePath string)` to specify a custom GOPATH for the build command.  This is useful to, for example, build a binary against its vendored Godeps.
+> By default, `gexec.Build` uses the GOPATH specified in your environment.  You can also use `gexec.BuildIn(gopath string, packagePath string)` to specify a custom GOPATH for the build command.  This is useful to, for example, build a binary against its vendored Go dependencies.
 
 > You can specify arbitrary environment variables for the build command – such as GOOS and GOARCH for building on other platforms – using `gexec.BuildWithEnvironment(packagePath string, envs []string)`.
 
@@ -2268,7 +2515,7 @@ session.Wait(5 * time.Second)
 > Under the hood `session.Wait` simply uses `Eventually`.
 
 
-Since the signalling methods return the session you can chain calls together:
+Since the signaling methods return the session you can chain calls together:
 
 ```go
 session.Terminate().Wait()
@@ -2572,7 +2819,7 @@ Expect(actual).To(MatchAllFields(Fields{
 
 ## `gmeasure`: Benchmarking Code
 
-`gmeasure` provides support for measuring and recording benchmarks of your code and tests.  It can be used as a simple standalone benchmarking framework, or as part of your code's test suite.  `gmeasure` integrates cleanly with Ginkgo V2 to enable rich benchmarking of code alognside your tests.
+`gmeasure` provides support for measuring and recording benchmarks of your code and tests.  It can be used as a simple standalone benchmarking framework, or as part of your code's test suite.  `gmeasure` integrates cleanly with Ginkgo V2 to enable rich benchmarking of code alongside your tests.
 
 ### A Mental Model for `gmeasure`
 
@@ -2911,7 +3158,7 @@ This simple connection point ensures that the output is appropriately formatted 
 
 ### Caching Experiments 
 
-`gmeasure` supports caching experiments to local disk.  Experiments can be stored and retreived from the cache by name and version number.  Caching allows you to skip rerunning expensive experiments and versioned caching allows you to bust the cache by incrementing the version number.  Under the hood, the cache is simply a set of files in a directory.  Each file contains a JSON encoded header with the experiment's name and version number followed by the JSON-encoded experiment.  The various cache methods are documented over at [pkg.go.dev](https://pkg.go.dev/github.com/onsi/gomega/gmeasure#ExperimentCache).
+`gmeasure` supports caching experiments to local disk.  Experiments can be stored and retrieved from the cache by name and version number.  Caching allows you to skip rerunning expensive experiments and versioned caching allows you to bust the cache by incrementing the version number.  Under the hood, the cache is simply a set of files in a directory.  Each file contains a JSON encoded header with the experiment's name and version number followed by the JSON-encoded experiment.  The various cache methods are documented over at [pkg.go.dev](https://pkg.go.dev/github.com/onsi/gomega/gmeasure#ExperimentCache).
 
 Using an `ExperimentCache` with Ginkgo takes a little bit of wiring.  Here's an example:
 
@@ -3056,11 +3303,27 @@ correctly terminate without triggering false positives. Please refer to the
 interval (which defaults to 1s) and the polling interval (which defaults to
 10ms).
 
-This form of goroutine leak test can cause false positives in situations where a
-test suite or dependency module uses additional goroutines. This simple form
-only looks at all goroutines _after_ a test has run and filters out all
-_well-known_ "non-leaky" goroutines, such as goroutines from Go's runtime and
-the testing frameworks (such as Go's own testing package and Gomega).
+Please note that this simplest form of goroutine leak test can cause false
+positives in situations where a test suite or dependency module uses additional
+goroutines. This simple form only looks at all goroutines _after_ a test has run
+and filters out all _well-known_ "non-leaky" goroutines, such as goroutines from
+Go's runtime and the testing frameworks (such as Go's own testing package and
+Gomega).
+
+### Ginkgo -p
+
+In case you intend to run multiple package tests in parallel using `ginkgo -p
+...`, you'll need to update any existing `BeforeSuite` or add new `BeforeSuite`s
+in each of your packages. Calling `gleak.IgnoreGinkgoParallelClient` at the
+beginning of `BeforeSuite` ensures that `gleak` updates its internal ignore list
+to ignore a background goroutine related to the communication between Ginkgo and
+the parallel packages under test.
+
+```go
+var _ = BeforeSuite(func() {
+    IgnoreGinkgoParallelClient()
+})
+```
 
 ### Using Goroutine Snapshots in Leak Testing
 
@@ -3095,7 +3358,7 @@ results in one or more goroutines. The ordering of the goroutines does not
 matter.
 
 `HaveLeaked` always takes the built-in list of well-known good goroutines into
-consideration and this list can neither be overriden nor disabled. Additional
+consideration and this list can neither be overridden nor disabled. Additional
 known non-leaky goroutines `NONLEAKY1`, ...  can be passed to `HaveLeaks` either
 in form of `GomegaMatcher`s or in shorthand notation:
 
@@ -3172,11 +3435,11 @@ goroutine(s) as non-leaky. `IgnoringGoroutines` compares goroutines by their
 Eventually(Goroutines).ShouldNot(HaveLeaked(IgnoringInBacktrace(FNAME)))
 ```
 
-`IgnoringInBacktrace` succeeds if `ACTUAL` contains a groutine where `FNAME` is
+`IgnoringInBacktrace` succeeds if `ACTUAL` contains a goroutine where `FNAME` is
 contained anywhere within its call stack (backtrace), causing `HaveLeaked` to
 filter out the matched goroutine as non-leaky. Please note that
 `IgnoringInBacktrace` uses a (somewhat lazy) `strings.Contains` to check for any
-occurence of `FNAME` in backtraces.
+occurrence of `FNAME` in backtraces.
 
 `ACTUAL` must be an array or slice of `Goroutine`s.
 
@@ -3187,7 +3450,7 @@ Eventually(Goroutines).ShouldNot(HaveLeaked(IgnoringCreator(CREATORNAME)))
 ```
 
 In its most basic form, `IgnoringCreator` succeeds if `ACTUAL` contains a
-groutine where the name of the function creating the goroutine matches
+goroutine where the name of the function creating the goroutine matches
 `CREATORNAME`, causing `HaveLeaked` to filter out the matched goroutine(s) as
 non-leaky. `IgnoringCreator` uses `==` for comparing the creator function name.
 
@@ -3234,11 +3497,13 @@ names of the topmost functions on their stacks (backtraces):
   - `testing.RunTests [chan receive]`,
   - `testing.(*T).Run [chan receive]`,
   - and `testing.(*T).Parallel [chan receive]`.
-- the [Ginko testing framework](https://onsi.github.io/ginkgo/):
+- the [Ginkgo testing framework](https://onsi.github.io/ginkgo/):
   - `github.com/onsi/ginkgo/v2/internal.(*Suite).runNode` (including anonymous
   inner functions),
   - the anonymous inner functions of
   `github.com/onsi/ginkgo/v2/internal/interrupt_handler.(*InterruptHandler).registerForInterrupts`,
+  - the creators `github.com/onsi/ginkgo/v2/internal.(*genericOutputInterceptor).ResumeIntercepting` and `github.com/onsi/ginkgo/v2/internal.(*genericOutputInterceptor).ResumeIntercepting...`,
+  - the creator `github.com/onsi/ginkgo/v2/internal.RegisterForProgressSignal`,
   - and finally
   `github.com/onsi/ginkgo/internal/specrunner.(*SpecRunner).registerForInterrupts`
   (for v1 support).

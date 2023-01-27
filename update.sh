@@ -25,6 +25,8 @@ find $tmpDir -name '*_test.go' -delete
   .github \
   Makefile \
   matchers/test_data \
+  matchers/be_comparable_to_matcher.go \
+  matchers/match_xml_matcher.go \
   matchers/match_yaml_matcher.go \
   README.md \
   RELEASING.md \
@@ -39,7 +41,7 @@ cp -r $tmpDir/* .
 # Apply patch
 git apply < update.patch
 
-# Tidy
+# # Tidy
 go mod tidy
 
 # Clean-up
